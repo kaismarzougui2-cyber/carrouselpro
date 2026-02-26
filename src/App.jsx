@@ -1,4 +1,9 @@
 import React, { useState, useRef, useEffect, useReducer, useCallback } from 'react';
+import { useEffect, useState } from 'react'
+import { supabase, getProfile } from './lib/supabaseClient'
+import { useCarouselSync } from './hooks/useCarouselSync'
+import { usePaywall, PaywallModal } from './lib/paywall'
+import Navbar from './components/Navbar'
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
 const GlobalStyles = () => (
@@ -516,6 +521,8 @@ const INIT_ADV={
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App(){
+  const [user, setUser] = useState(null)
+const [profile, setProfile] = useState(null)
   const [mode,setMode]=useState('simple');
 
   // ── Simple state ──
@@ -542,7 +549,28 @@ export default function App(){
   const [notif,setNotif]=useState(null);
   const [exporting,setExp]=useState(false);
   const fileRef=useRef(null);
+useEffect(() => {
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    setUser(session?.user ?? null)
+    if (session?.user) getProfile(session.user.id).then(setProfile).catch(console.error)
+  })
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+    setUser(session?.user ?? null)
+    if (session?.user) getProfile(session.user.id).then(setProfile).catch(console.error)
+    else setProfile(null)
+  })
+  return () => subscription.unsubscribe()
+}, [])
 
+const { saveStatus } = useCarouselSync(adv, user, profile?.is_premium)
+const { gateExport, showPaywall, closePaywall } = usePaywall(profile)
+```
+
+---
+
+**6.** Maintenant cherche avec **Ctrl+F** :
+```
+<GlobalStyles />
   const toast=msg=>{setNotif(msg);setTimeout(()=>setNotif(null),2500);};
 
   useEffect(()=>{
@@ -651,34 +679,12 @@ export default function App(){
       <GlobalStyles/>
 
       {/* NAV */}
-      <nav className="nav">
-        <div className="nav-inner">
-          <div className="nav-logo">
-            <div className="logo-sq"><span>C</span></div>
-            CarrouselPro
-          </div>
-          <div className="mode-sw">
-            <button className={`mode-btn ${mode==='simple'?'on':''}`} onClick={()=>setMode('simple')}>⚡ Simple</button>
-            <button className={`mode-btn ${mode==='advanced'?'on':''}`} onClick={()=>setMode('advanced')}>🔧 Pro</button>
-          </div>
-          <div className="nav-r">
-            {mode==='advanced'&&(
-              <>
-                <button className="ur-btn" onClick={()=>dispatch({type:'UNDO'})} disabled={!hist.past.length} title="Annuler">↩</button>
-                <button className="ur-btn" onClick={()=>dispatch({type:'REDO'})} disabled={!hist.future.length} title="Rétablir">↪</button>
-                <button className="dl-btn" disabled={exporting} onClick={()=>doExport(aSlides,aData,aPlt.w,aPlt.h)}>
-                  {exporting?'⏳':`⬇ ZIP (${aSlides.length})`}
-                </button>
-              </>
-            )}
-            {mode==='simple'&&step===3&&(
-              <button className="dl-btn" disabled={exporting} onClick={()=>doExport(slides,simData,plt.w,plt.h)}>
-                {exporting?'⏳':`⬇ ZIP`}
-              </button>
-            )}
-          </div>
-        </div>
-      </nav>
+     <Navbar user={user} profile={profile} saveStatus={saveStatus}>
+  <div className="mode-sw">
+    <button className={`mode-btn ${mode==='simple'?'on':''}`} onClick={()=>setMode('simple')}>⚡ Simple</button>
+    <button className={`mode-btn ${mode==='advanced'?'on':''}`} onClick={()=>setMode('advanced')}>🔧 Pro</button>
+  </div>
+</Navbar>
 
       {/* ════ SIMPLE MODE ════ */}
       {mode==='simple'&&(
@@ -1161,6 +1167,7 @@ function AdvPanel({aTab,aSl,aSel,aSlBg,aUpd,aUpdBg,aGlobal,setAdv,aBrand,aApplyT
           <button className="btn btn-o btn-sm" style={{flex:1}} onClick={()=>dispatch({type:'REDO'})} disabled={!hist.future.length}>↪ Rétablir</button>
         </div>
       </S>
+      {showPaywall && <PaywallModal user={user} onClose={closePaywall}/>}
     </div>
   );
 
