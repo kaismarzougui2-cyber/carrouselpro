@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useReducer, useCallback } from 'react';
-import { useEffect, useState } from 'react'
 import { supabase, getProfile } from './lib/supabaseClient'
 import { useCarouselSync } from './hooks/useCarouselSync'
 import { usePaywall, PaywallModal } from './lib/paywall'
@@ -568,10 +567,7 @@ const { gateExport, showPaywall, closePaywall } = usePaywall(profile)
 
 ---
 
-**6.** Maintenant cherche avec **Ctrl+F** :
-```
-<GlobalStyles />
-  const toast=msg=>{setNotif(msg);setTimeout(()=>setNotif(null),2500);};
+
 
   useEffect(()=>{
     const s=document.createElement('script');
