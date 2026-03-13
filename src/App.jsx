@@ -482,6 +482,17 @@ const ThumbCanvas = React.memo(({data})=>{
   return <canvas ref={ref} style={{width:'100%',height:'100%',display:'block'}}/>;
 });
 
+// ─── BRANDING DETECTION ──────────────────────────────────────────────────────
+// Extrait le premier @handle d'un texte et retourne { handle, clean }
+function extractBranding(text){
+  const m=text.match(/@[\w.]+/);
+  if(!m)return{handle:null,clean:text};
+  const handle=m[0];
+  // Supprime le handle du texte (+ ligne vide éventuelle autour)
+  const clean=text.replace(handle,'').replace(/\n{3,}/g,'\n\n').trim();
+  return{handle,clean};
+}
+
 // ─── SMART SPLIT ─────────────────────────────────────────────────────────────
 function smartSplit(raw){
   const byDouble=raw.split(/\n\n+/).map(s=>s.replace(/\n/g,' ').trim()).filter(Boolean);
@@ -595,7 +606,13 @@ const { gateExport } = usePaywall()
     signature:sSig,showNum:true,slideNum:i+1,total:slides.length,
   });
 
-  const handleParse=()=>{const c=smartSplit(raw);setSlides(c);setStep(2);};
+  const handleParse=()=>{
+    const {handle,clean}=extractBranding(raw);
+    if(handle)setSSig(handle);
+    const c=smartSplit(handle?clean:raw);
+    setSlides(c);setStep(2);
+    if(handle)toast(`Branding détecté → ${handle} ✓`);
+  };
 
   // ── Advanced helpers ──
   const {slides:aSlides,global:aGlobal,brand:aBrand,platform:aPlatform,sel:aSel}=adv;
@@ -645,9 +662,16 @@ const { gateExport } = usePaywall()
 
   const aImportFn=()=>{
     if(!aImport.trim())return;
-    const chunks=smartSplit(aImport);
-    setAdv(s=>({...s,slides:chunks.map((t,i)=>mkSlide(t,i)),sel:0}),'Import text');
-    setAImport(''); toast(`${chunks.length} slides créées ✓`);
+    const {handle,clean}=extractBranding(aImport);
+    const chunks=smartSplit(handle?clean:aImport);
+    setAdv(s=>({
+      ...s,
+      slides:chunks.map((t,i)=>mkSlide(t,i)),
+      sel:0,
+      brand:handle?{...s.brand,signature:handle,showSig:true}:s.brand,
+    }),'Import text');
+    setAImport('');
+    toast(handle?`${chunks.length} slides · branding → ${handle} ✓`:`${chunks.length} slides créées ✓`);
   };
 
   const aBgImage=e=>{
@@ -749,11 +773,21 @@ const { gateExport } = usePaywall()
                 <div className="card-sub">Saute <strong>deux fois Entrée</strong> entre chaque slide — ou colle n'importe quel texte pour un découpage automatique.</div>
                 <textarea className="big-ta" value={raw} onChange={e=>setRaw(e.target.value)}
                   placeholder={"Exemple :\n\nComment gagner du temps le matin.\n\nPremière astuce : prépare ta tenue la veille.\n\nDeuxième astuce : évite les réseaux le matin."}/>
+                {extractBranding(raw).handle&&(
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginTop:8,padding:'8px 12px',
+                    borderRadius:10,background:'rgba(61,220,132,.1)',border:'1px solid rgba(61,220,132,.25)'}}>
+                    <span style={{fontSize:16}}>✓</span>
+                    <span style={{fontSize:12,fontWeight:700,color:'var(--green)'}}>
+                      Branding détecté — <strong>{extractBranding(raw).handle}</strong> sera ajouté sur toutes les slides
+                    </span>
+                  </div>
+                )}
                 <div className="hint">
                   <span>💡</span>
                   <div><strong>2 façons :</strong><br/>
                   • <strong>Manuel :</strong> 2× Entrée entre chaque slide<br/>
-                  • <strong>Auto :</strong> colle ton texte, on détecte les phrases</div>
+                  • <strong>Auto :</strong> colle ton texte, on détecte les phrases<br/>
+                  • <strong>Branding :</strong> ajoute <strong>@tonpseudo</strong> n'importe où</div>
                 </div>
                 {preview.length>0&&(
                   <div>
@@ -890,6 +924,12 @@ const { gateExport } = usePaywall()
               <div className="adv-sec-t">Importer du texte</div>
               <textarea className="ata" value={aImport} onChange={e=>setAImport(e.target.value)}
                 placeholder={"Colle ton texte...\n\nDouble saut = nouvelle slide"} style={{height:80,fontSize:13}}/>
+              {extractBranding(aImport).handle&&(
+                <div style={{fontSize:11,fontWeight:700,color:'var(--green)',
+                  padding:'5px 0',display:'flex',alignItems:'center',gap:5}}>
+                  ✓ Branding : {extractBranding(aImport).handle}
+                </div>
+              )}
               <button className="btn btn-s btn-full btn-sm" onClick={aImportFn} disabled={!aImport.trim()}>✂ Découper</button>
             </div>
             <div className="adv-sec">
@@ -962,6 +1002,12 @@ const { gateExport } = usePaywall()
               <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)'}}>
                 <textarea className="ata" value={aImport} onChange={e=>setAImport(e.target.value)}
                   placeholder={"Colle ton texte...\n\nDouble saut = nouvelle slide"} style={{height:80,fontSize:13}}/>
+                {extractBranding(aImport).handle&&(
+                  <div style={{fontSize:11,fontWeight:700,color:'var(--green)',
+                    padding:'5px 0',display:'flex',alignItems:'center',gap:5}}>
+                    ✓ Branding : {extractBranding(aImport).handle}
+                  </div>
+                )}
                 <button className="btn btn-s btn-full btn-sm" onClick={aImportFn} disabled={!aImport.trim()}>✂ Importer</button>
               </div>
               <div className="slide-scroll">
