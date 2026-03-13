@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useReducer, useCallback } from 'react';
-import { auth, getProfile, saveTemplate, getUserTemplates, deleteTemplate, normalizeUser, onAuthStateChanged } from './lib/firebase'
 import { useCarouselSync } from './hooks/useCarouselSync'
-import { usePaywall, PaywallModal } from './lib/paywall.jsx'
+import { usePaywall } from './lib/paywall.jsx'
 import Navbar from './components/Navbar'
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
@@ -542,8 +541,6 @@ const INIT_ADV={
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App(){
-  const [user, setUser] = useState(null)
-const [profile, setProfile] = useState(null)
   const [mode,setMode]=useState('simple');
 
   // ── Simple state ──
@@ -570,53 +567,13 @@ const [profile, setProfile] = useState(null)
   const [notif,setNotif]=useState(null);
   const [exporting,setExp]=useState(false);
   const fileRef=useRef(null);
-  const [userTemplates, setUserTemplates] = useState([])
-
   // ── Toast helper ──
   const toast = useCallback((msg) => {
     setNotif(msg); setTimeout(() => setNotif(null), 2500)
   }, [])
 
-useEffect(() => {
-  const unsub = onAuthStateChanged(auth, async (fbUser) => {
-    const u = normalizeUser(fbUser)
-    setUser(u)
-    if (u) getProfile(u.uid).then(setProfile).catch(console.error)
-    else setProfile(null)
-  })
-  return unsub
-}, [])
-
-const { saveStatus } = useCarouselSync(adv, user, profile?.is_premium)
-const { gateExport, showPaywall, closePaywall } = usePaywall(profile)
-
-  // ── Templates ──
-  const loadUserTemplates = useCallback(async () => {
-    if (!user) { setUserTemplates([]); return }
-    try { setUserTemplates((await getUserTemplates(user.id)) || []) }
-    catch (e) { console.error('[templates]', e) }
-  }, [user])
-
-  const saveUserTemplate = useCallback(async (name) => {
-    if (!user) { toast('Connecte-toi pour sauvegarder un template'); return }
-    try {
-      const g = adv.global
-      await saveTemplate(user.id, { name, data: { bg: g.bg, textColor: g.textColor, font: g.font, fontSize: g.fontSize } })
-      loadUserTemplates()
-      toast(`"${name}" sauvegardé ✓`)
-    } catch(e) { toast('Erreur lors de la sauvegarde') }
-  }, [user, adv, loadUserTemplates, toast])
-
-  const removeUserTemplate = useCallback(async (id) => {
-    if (!user) return
-    try {
-      await deleteTemplate(user.id, id)
-      setUserTemplates(prev => prev.filter(t => t.id !== id))
-      toast('Template supprimé ✓')
-    } catch(e) { toast('Erreur lors de la suppression') }
-  }, [user, toast])
-
-  useEffect(() => { loadUserTemplates() }, [loadUserTemplates])
+const { saveStatus } = useCarouselSync()
+const { gateExport } = usePaywall()
 
   useEffect(()=>{
     const s=document.createElement('script');
@@ -725,7 +682,7 @@ const { gateExport, showPaywall, closePaywall } = usePaywall(profile)
       <GlobalStyles/>
 
       {/* NAV */}
-     <Navbar user={user} profile={profile} saveStatus={saveStatus}>
+     <Navbar>
   <div className="mode-sw">
     <button className={`mode-btn ${mode==='simple'?'on':''}`} onClick={()=>setMode('simple')}>⚡ Simple</button>
     <button className={`mode-btn ${mode==='advanced'?'on':''}`} onClick={()=>setMode('advanced')}>🔧 Pro</button>
@@ -934,10 +891,7 @@ const { gateExport, showPaywall, closePaywall } = usePaywall(profile)
               aUpd={aUpd} aUpdBg={aUpdBg} aGlobal={aGlobal} setAdv={setAdv}
               aBrand={aBrand} aApplyTpl={aApplyTpl} fileRef={fileRef}
               aPlatform={aPlatform} hist={hist} dispatch={dispatch}
-              aSlides={aSlides} toast={toast}
-              user={user} showPaywall={showPaywall} closePaywall={closePaywall}
-              userTemplates={userTemplates} saveUserTemplate={saveUserTemplate}
-              removeUserTemplate={removeUserTemplate}/>
+              aSlides={aSlides} toast={toast}/>
           </div>
 
           {/* ── MOBILE TAB BAR ── */}
@@ -1000,10 +954,7 @@ const { gateExport, showPaywall, closePaywall } = usePaywall(profile)
                   aUpd={aUpd} aUpdBg={aUpdBg} aGlobal={aGlobal} setAdv={setAdv}
                   aBrand={aBrand} aApplyTpl={aApplyTpl} fileRef={fileRef}
                   aPlatform={aPlatform} hist={hist} dispatch={dispatch}
-                  aSlides={aSlides} toast={toast}
-                  user={user} showPaywall={showPaywall} closePaywall={closePaywall}
-                  userTemplates={userTemplates} saveUserTemplate={saveUserTemplate}
-                  removeUserTemplate={removeUserTemplate}/>
+                  aSlides={aSlides} toast={toast}/>
               </div>
             </div>
           )}
@@ -1021,27 +972,12 @@ const { gateExport, showPaywall, closePaywall } = usePaywall(profile)
       )}
 
       {notif&&<div className="notif"><span style={{color:'var(--green)'}}>✓</span> {notif}</div>}
-      {showPaywall&&<PaywallModal user={user} onClose={closePaywall}/>}
     </div>
   );
 }
 
 // ─── ADV PANEL (right panel content, shared mobile + desktop) ────────────────
-// ─── TEMPLATE SAVE ROW ───────────────────────────────────────
-function TplSaveRow({saveUserTemplate}) {
-  const [name, setName] = useState('Mon template')
-  return (
-    <div style={{display:'flex',gap:6,marginBottom:8}}>
-      <input className="ti" value={name} onChange={e=>setName(e.target.value)}
-        placeholder="Nom du template" style={{flex:1,fontSize:12,padding:'8px 10px'}}/>
-      <button className="btn btn-s btn-sm"
-        onClick={()=>{if(name.trim())saveUserTemplate(name.trim())}}
-        disabled={!name.trim()} style={{flexShrink:0,whiteSpace:'nowrap'}}>💾 Sauver</button>
-    </div>
-  )
-}
-
-function AdvPanel({aTab,aSl,aSel,aSlBg,aUpd,aUpdBg,aGlobal,setAdv,aBrand,aApplyTpl,fileRef,aPlatform,hist,dispatch,aSlides,toast,user,showPaywall,closePaywall,userTemplates=[],saveUserTemplate,removeUserTemplate}){
+function AdvPanel({aTab,aSl,aSel,aSlBg,aUpd,aUpdBg,aGlobal,setAdv,aBrand,aApplyTpl,fileRef,aPlatform,hist,dispatch,aSlides,toast}){
   const S=({children,t})=><div className="prop-sec">{t&&<div className="prop-sec-t">{t}</div>}{children}</div>;
 
   if(aTab==='slide') return(
@@ -1185,39 +1121,6 @@ function AdvPanel({aTab,aSl,aSel,aSlBg,aUpd,aUpdBg,aGlobal,setAdv,aBrand,aApplyT
 
   if(aTab==='tpl') return(
     <div>
-      {/* ── Mes templates (utilisateur connecté) ── */}
-      {user ? (
-        <S t="Mes templates">
-          <TplSaveRow saveUserTemplate={saveUserTemplate}/>
-          {userTemplates.length > 0 ? (
-            <div className="tpl-grid" style={{marginTop:8}}>
-              {userTemplates.map(tpl=>{
-                const d=tpl.data||{};
-                const fd={text:'TPL',bg:d.bg||{type:'color',color:'#111'},textColor:d.textColor||'#fff',font:d.font||'Montserrat',fontSize:36,signature:'',showNum:false,slideNum:1,total:1};
-                return(
-                  <div key={tpl.id} style={{position:'relative'}}>
-                    <div className="tpl-card" title={`Appliquer "${tpl.name}" à tout`}
-                      onClick={()=>aApplyTpl({bg:d.bg,textColor:d.textColor,font:d.font,fontSize:d.fontSize,name:tpl.name},true)}>
-                      <ThumbCanvas data={fd}/>
-                      <div className="tpl-name">{tpl.name}</div>
-                    </div>
-                    <button style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.85)',border:'none',color:'#ff4d4d',width:16,height:16,borderRadius:3,fontSize:9,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}
-                      onClick={e=>{e.stopPropagation();removeUserTemplate(tpl.id);}}>✕</button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={{fontSize:11,color:'var(--text3)',fontWeight:600,paddingTop:2}}>
-              Aucun template sauvegardé — configure un style global et clique Sauver.
-            </div>
-          )}
-        </S>
-      ) : (
-        <S><div style={{fontSize:12,color:'var(--text3)',fontWeight:600,lineHeight:1.6}}>
-          Connecte-toi pour sauvegarder tes propres templates.
-        </div></S>
-      )}
       <S t="→ Cette slide seulement">
         <div className="tpl-grid">
           {PRESETS.map(tpl=>{
