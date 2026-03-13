@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState, useRef, useEffect } from 'react'
-import { signOut, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } from '../lib/supabaseClient'
+import { signOut, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } from '../lib/firebase'
 import { handleCheckout } from '../lib/checkout'
 
 // ── Styles ────────────────────────────────────────────────────

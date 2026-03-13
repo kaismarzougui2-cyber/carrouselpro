@@ -1,8 +1,7 @@
 // api/stripe-webhook.js
 // ─────────────────────────────────────────────────────────────
-// Vercel Edge Function — reçoit les événements Stripe
-// et met à jour Supabase en conséquence.
-// ─────────────────────────────────────────────────────────────
+// Vercel Serverless Function — reçoit les événements Stripe
+// et met à jour Firestore en conséquence.
 //
 // Setup :
 //  1. Stripe Dashboard > Developers > Webhooks > Add endpoint
@@ -12,104 +11,103 @@
 //                  invoice.payment_failed
 //
 //  2. Variables Vercel (Settings > Environment Variables) :
-//     STRIPE_SECRET_KEY         → Stripe > Developers > API keys > Secret key
-//     STRIPE_WEBHOOK_SECRET     → Stripe > Developers > Webhooks > Signing secret
-//     SUPABASE_SERVICE_ROLE_KEY → Supabase > Settings > API > service_role (⚠ secret !)
-//     VITE_SUPABASE_URL         → déjà configuré
+//     STRIPE_SECRET_KEY       → Stripe > Developers > API keys > Secret key
+//     STRIPE_WEBHOOK_SECRET   → Stripe > Developers > Webhooks > Signing secret
+//     FIREBASE_PROJECT_ID     → Firebase Console > Paramètres du projet
+//     FIREBASE_CLIENT_EMAIL   → Firebase Console > Paramètres > Comptes de service > Générer clé privée
+//     FIREBASE_PRIVATE_KEY    → (même fichier JSON, champ "private_key")
 // ─────────────────────────────────────────────────────────────
 
 import Stripe from 'stripe'
-import { createClient } from '@supabase/supabase-js'
+import { initializeApp, getApps, cert } from 'firebase-admin/app'
+import { getFirestore }                  from 'firebase-admin/firestore'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
-// ⚠ service_role bypasse le Row Level Security — côté serveur UNIQUEMENT
-const supabaseAdmin = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+// Init Firebase Admin (une seule fois)
+if (!getApps().length) {
+  initializeApp({
+    credential: cert({
+      projectId:   process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey:  process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  })
+}
+const db = getFirestore()
 
-export const config = { runtime: 'edge' }
+// ─── Helper : find user by stripe_customer_id ─────────────────
+async function findUserByCustomer(customerId) {
+  const snap = await db.collection('users')
+    .where('stripe_customer_id', '==', customerId)
+    .limit(1)
+    .get()
+  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() }
+}
 
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 })
+    return res.status(405).send('Method not allowed')
   }
 
-  const body      = await req.text()
-  const signature = req.headers.get('stripe-signature')
+  const signature = req.headers['stripe-signature']
 
-  // Vérifie la signature Stripe (sécurité obligatoire)
   let event
   try {
-    event = await stripe.webhooks.constructEventAsync(
-      body, signature, process.env.STRIPE_WEBHOOK_SECRET
+    event = stripe.webhooks.constructEvent(
+      req.body, signature, process.env.STRIPE_WEBHOOK_SECRET
     )
   } catch (err) {
     console.error('[Webhook] Signature invalide:', err.message)
-    return new Response(`Webhook Error: ${err.message}`, { status: 400 })
+    return res.status(400).send(`Webhook Error: ${err.message}`)
   }
 
   // ── Paiement réussi → activer Premium ──────────────────────
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object
-    const userId  = session.metadata?.supabase_user_id
+    const userId  = session.metadata?.firebase_user_id
 
     if (!userId) {
-      console.error('[Webhook] supabase_user_id manquant dans metadata')
-      return new Response('Missing user id', { status: 400 })
+      console.error('[Webhook] firebase_user_id manquant dans metadata')
+      return res.status(400).send('Missing user id')
     }
 
-    const { error } = await supabaseAdmin
-      .from('profiles')
-      .update({
+    try {
+      await db.collection('users').doc(userId).set({
         is_premium:             true,
         stripe_customer_id:     session.customer,
         stripe_subscription_id: session.subscription,
         premium_until:          null,
-      })
-      .eq('id', userId)
-
-    if (error) {
-      console.error('[Webhook] Erreur activation Premium:', error)
-      return new Response('DB Error', { status: 500 })
+      }, { merge: true })
+      console.log(`[Webhook] ✓ User ${userId} → Premium activé`)
+    } catch (e) {
+      console.error('[Webhook] Erreur activation Premium:', e)
+      return res.status(500).send('DB Error')
     }
-    console.log(`[Webhook] ✓ User ${userId} → Premium activé`)
   }
 
   // ── Abonnement annulé → désactiver Premium ─────────────────
   if (event.type === 'customer.subscription.deleted') {
-    const sub        = event.data.object
-    const customerId = sub.customer
-
-    const { error } = await supabaseAdmin
-      .from('profiles')
-      .update({
+    const customerId = event.data.object.customer
+    const user = await findUserByCustomer(customerId)
+    if (user) {
+      await db.collection('users').doc(user.id).update({
         is_premium:    false,
         premium_until: new Date().toISOString(),
       })
-      .eq('stripe_customer_id', customerId)
-
-    if (error) console.error('[Webhook] Erreur désactivation:', error)
-    else console.log(`[Webhook] ✓ Customer ${customerId} → Plan gratuit`)
+      console.log(`[Webhook] ✓ Customer ${customerId} → Plan gratuit`)
+    }
   }
 
   // ── Paiement échoué → désactiver Premium ───────────────────
   if (event.type === 'invoice.payment_failed') {
-    const invoice    = event.data.object
-    const customerId = invoice.customer
-
-    const { error } = await supabaseAdmin
-      .from('profiles')
-      .update({ is_premium: false })
-      .eq('stripe_customer_id', customerId)
-
-    if (error) console.error('[Webhook] Erreur paiement échoué:', error)
-    else console.log(`[Webhook] ✓ Customer ${customerId} → Paiement échoué, downgrade`)
+    const customerId = event.data.object.customer
+    const user = await findUserByCustomer(customerId)
+    if (user) {
+      await db.collection('users').doc(user.id).update({ is_premium: false })
+      console.log(`[Webhook] ✓ Customer ${customerId} → Paiement échoué, downgrade`)
+    }
   }
 
-  return new Response(JSON.stringify({ received: true }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
+  res.status(200).json({ received: true })
 }

@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { saveCarousel, countUserCarousels } from '../lib/supabaseClient'
+import { saveCarousel, countUserCarousels } from '../lib/firebase'
 
 const DEBOUNCE_MS    = 2000   // délai avant sauvegarde
 const FREE_MAX_SAVES = 3      // limite gratuit

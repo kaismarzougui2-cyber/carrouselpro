@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useReducer, useCallback } from 'react';
-import { supabase, getProfile, saveTemplate, getUserTemplates, deleteTemplate } from './lib/supabaseClient'
+import { auth, getProfile, saveTemplate, getUserTemplates, deleteTemplate, normalizeUser, onAuthStateChanged } from './lib/firebase'
 import { useCarouselSync } from './hooks/useCarouselSync'
 import { usePaywall, PaywallModal } from './lib/paywall'
 import Navbar from './components/Navbar'
@@ -200,25 +200,25 @@ const GlobalStyles = () => (
     .adv-mtabs{display:flex;overflow-x:auto;border-bottom:1px solid var(--border);
       background:var(--bg2);-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .adv-mtabs::-webkit-scrollbar{display:none}
-    .adv-mtab{flex-shrink:0;padding:11px 16px;font-family:'Syne',sans-serif;
-      font-size:10px;font-weight:800;letter-spacing:.5px;cursor:pointer;border:none;
+    .adv-mtab{flex-shrink:0;padding:14px 18px;font-family:'Syne',sans-serif;
+      font-size:11px;font-weight:800;letter-spacing:.5px;cursor:pointer;border:none;
       background:transparent;color:var(--text3);border-bottom:2px solid transparent;
-      transition:all .15s;white-space:nowrap}
+      transition:all .15s;white-space:nowrap;min-height:48px}
     .adv-mtab.on{color:var(--text);border-bottom-color:var(--accent)}
 
     /* SLIDE SCROLL */
     .slide-scroll{display:flex;gap:9px;overflow-x:auto;padding:12px 16px;
       -webkit-overflow-scrolling:touch;scrollbar-width:none}
     .slide-scroll::-webkit-scrollbar{display:none}
-    .sthumb{flex-shrink:0;width:70px;height:70px;border-radius:8px;overflow:hidden;
+    .sthumb{flex-shrink:0;width:80px;height:80px;border-radius:10px;overflow:hidden;
       border:2px solid var(--border);cursor:pointer;position:relative;transition:border .15s}
     .sthumb.sel{border-color:var(--accent)}
     .sthumb canvas{width:100%;height:100%;display:block}
     .sthumb-n{position:absolute;bottom:3px;left:3px;background:rgba(0,0,0,.75);color:#fff;
-      font-size:7px;font-weight:800;padding:1px 5px;border-radius:2px}
-    .add-thumb{flex-shrink:0;width:70px;height:70px;border-radius:8px;
+      font-size:8px;font-weight:800;padding:2px 6px;border-radius:2px}
+    .add-thumb{flex-shrink:0;width:80px;height:80px;border-radius:10px;
       border:1px dashed var(--border2);background:transparent;color:var(--text3);
-      display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer}
+      display:flex;align-items:center;justify-content:center;font-size:26px;cursor:pointer}
     .add-thumb:active{border-color:var(--accent);color:var(--accent)}
 
     /* ADV CANVAS */
@@ -272,7 +272,8 @@ const GlobalStyles = () => (
     .up-btn:active{border-color:var(--accent);color:var(--text);background:var(--dim)}
 
     /* TEMPLATES */
-    .tpl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+    .tpl-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+    @media(min-width:480px){.tpl-grid{grid-template-columns:repeat(3,1fr)}}
     .tpl-card{aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);
       cursor:pointer;position:relative;transition:all .15s}
     .tpl-card:active{transform:scale(.95)}
@@ -362,6 +363,27 @@ const GlobalStyles = () => (
     .pg{padding:14px;border-bottom:1px solid var(--border)}
     .pg-t{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;
       color:var(--text3);margin-bottom:10px;display:block}
+
+    /* MOBILE OPTIMIZATIONS */
+    @media(max-width:767px){
+      .btn{min-height:48px;padding:12px 18px}
+      .btn-sm{min-height:40px;padding:8px 12px}
+      .btn-lg{min-height:56px;padding:16px 24px}
+      .btn-icon{width:44px;height:44px}
+      .chip-x{min-height:48px}
+      .swatch{width:44px;height:44px}
+      input[type=color]{width:44px;height:44px}
+      .prop-sec{padding:14px}
+      .prop-row{margin-bottom:10px}
+      .range-row{margin-bottom:10px}
+      .slide-scroll{padding:14px 16px;gap:10px}
+      .adv-prev{padding:0 16px 10px}
+      .plat-btn{min-height:50px;font-size:11px}
+      select.sty{padding:14px}
+      input.ti{padding:14px}
+      .bg-tab{min-height:44px}
+      .ur-btn{min-height:40px}
+    }
 
     /* NOTIF */
     .notif{position:fixed;bottom:calc(70px + var(--sb));right:16px;z-index:999;
@@ -556,16 +578,13 @@ const [profile, setProfile] = useState(null)
   }, [])
 
 useEffect(() => {
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    setUser(session?.user ?? null)
-    if (session?.user) getProfile(session.user.id).then(setProfile).catch(console.error)
-  })
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-    setUser(session?.user ?? null)
-    if (session?.user) getProfile(session.user.id).then(setProfile).catch(console.error)
+  const unsub = onAuthStateChanged(auth, async (fbUser) => {
+    const u = normalizeUser(fbUser)
+    setUser(u)
+    if (u) getProfile(u.uid).then(setProfile).catch(console.error)
     else setProfile(null)
   })
-  return () => subscription.unsubscribe()
+  return unsub
 }, [])
 
 const { saveStatus } = useCarouselSync(adv, user, profile?.is_premium)
@@ -981,7 +1000,10 @@ const { gateExport, showPaywall, closePaywall } = usePaywall(profile)
                   aUpd={aUpd} aUpdBg={aUpdBg} aGlobal={aGlobal} setAdv={setAdv}
                   aBrand={aBrand} aApplyTpl={aApplyTpl} fileRef={fileRef}
                   aPlatform={aPlatform} hist={hist} dispatch={dispatch}
-                  aSlides={aSlides} toast={toast}/>
+                  aSlides={aSlides} toast={toast}
+                  user={user} showPaywall={showPaywall} closePaywall={closePaywall}
+                  userTemplates={userTemplates} saveUserTemplate={saveUserTemplate}
+                  removeUserTemplate={removeUserTemplate}/>
               </div>
             </div>
           )}

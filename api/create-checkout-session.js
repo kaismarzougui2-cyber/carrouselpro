@@ -41,7 +41,7 @@ export default async function handler(req) {
       payment_method_types: ['card'],
       customer_email:       email,
       line_items:           [{ price: priceId, quantity: 1 }],
-      metadata:             { supabase_user_id: userId },
+      metadata:             { firebase_user_id: userId },
       success_url:          `${appUrl}/?checkout=success`,
       cancel_url:           `${appUrl}/?checkout=cancel`,
       allow_promotion_codes: true,
