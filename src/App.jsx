@@ -426,6 +426,8 @@ const QTXT  = ['#ffffff','#000000','#f5f0e8','#ffd700','#e0d7ff','#ff6b6b'];
 function drawSlide(canvas, {text, bg, textColor, font, fontSize, signature, showNum, slideNum, total}) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
+  const scale = W / 1080;
+  const fs = Math.round(fontSize * scale);
 
   if (bg.type==='color') {
     ctx.fillStyle=bg.color; ctx.fillRect(0,0,W,H);
@@ -458,9 +460,9 @@ function drawSlide(canvas, {text, bg, textColor, font, fontSize, signature, show
   }
 
   ctx.fillStyle=textColor; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.font=`bold ${fontSize}px '${font}',sans-serif`;
+  ctx.font=`bold ${fs}px '${font}',sans-serif`;
   const words=(text||' ').toUpperCase().split(' ');
-  const maxW=W*.84, lh=fontSize*1.18;
+  const maxW=W*.84, lh=fs*1.18;
   let lines=[],cur='';
   words.forEach(w=>{const t=cur+w+' ';if(ctx.measureText(t).width>maxW&&cur){lines.push(cur.trim());cur=w+' ';}else cur=t;});
   if(cur.trim())lines.push(cur.trim());
@@ -471,12 +473,12 @@ function drawSlide(canvas, {text, bg, textColor, font, fontSize, signature, show
 // ─── CANVAS COMPONENTS ───────────────────────────────────────────────────────
 const SlideCanvas = React.memo(({data, W=1080, H=1080})=>{
   const ref=useRef(null);
-  useEffect(()=>{const c=ref.current;if(!c)return;c.width=W;c.height=H;drawSlide(c,data);});
+  useEffect(()=>{const c=ref.current;if(!c)return;c.width=W;c.height=H;drawSlide(c,data);},[data,W,H]);
   return <canvas ref={ref} style={{width:'100%',height:'100%',display:'block'}}/>;
 });
 const ThumbCanvas = React.memo(({data})=>{
   const ref=useRef(null);
-  useEffect(()=>{const c=ref.current;if(!c)return;c.width=200;c.height=200;drawSlide(c,data);});
+  useEffect(()=>{const c=ref.current;if(!c)return;c.width=200;c.height=200;drawSlide(c,data);},[data]);
   return <canvas ref={ref} style={{width:'100%',height:'100%',display:'block'}}/>;
 });
 
@@ -819,7 +821,7 @@ const { gateExport } = usePaywall()
               </div>
               <div className="prev-grid">
                 {slides.map((sl,i)=>(
-                  <div key={`${i}-${sl}-${sBg}-${sTxt}-${sFont}-${sSig}`} className="prev-card">
+                  <div key={i} className="prev-card">
                     <SlideCanvas data={simData(sl,i)} W={plt.w} H={plt.h}/>
                     <div className="prev-badge">SLIDE {i+1}</div>
                   </div>
@@ -977,8 +979,8 @@ const { gateExport } = usePaywall()
 }
 
 // ─── ADV PANEL (right panel content, shared mobile + desktop) ────────────────
+function S({children,t}){return <div className="prop-sec">{t&&<div className="prop-sec-t">{t}</div>}{children}</div>;}
 function AdvPanel({aTab,aSl,aSel,aSlBg,aUpd,aUpdBg,aGlobal,setAdv,aBrand,aApplyTpl,fileRef,aPlatform,hist,dispatch,aSlides,toast}){
-  const S=({children,t})=><div className="prop-sec">{t&&<div className="prop-sec-t">{t}</div>}{children}</div>;
 
   if(aTab==='slide') return(
     <div>
