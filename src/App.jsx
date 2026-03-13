@@ -746,8 +746,25 @@ const { gateExport } = usePaywall()
       {/* NAV */}
      <Navbar>
   <div className="mode-sw">
-    <button className={`mode-btn ${mode==='simple'?'on':''}`} onClick={()=>setMode('simple')}>⚡ Simple</button>
-    <button className={`mode-btn ${mode==='advanced'?'on':''}`} onClick={()=>setMode('advanced')}>🔧 Pro</button>
+    <button className={`mode-btn ${mode==='simple'?'on':''}`} onClick={()=>{
+      if(mode==='advanced'){
+        // Pro → Simple : récupère les textes des slides avancées
+        const texts=adv.slides.map(sl=>sl.text).filter(Boolean);
+        if(texts.length){setSlides(texts);setRaw(texts.join('\n\n'));setStep(3);}
+      }
+      setMode('simple');
+    }}>⚡ Simple</button>
+    <button className={`mode-btn ${mode==='advanced'?'on':''}`} onClick={()=>{
+      if(mode==='simple'&&slides.length){
+        // Simple → Pro : injecte les slides simples dans le mode avancé
+        setAdv(s=>({...s,slides:slides.map((t,i)=>mkSlide(t,i)),sel:0}),'Import depuis Simple');
+      } else if(mode==='simple'&&raw.trim()){
+        // Texte pas encore découpé : découpe à la volée
+        const chunks=smartSplit(raw);
+        setAdv(s=>({...s,slides:chunks.map((t,i)=>mkSlide(t,i)),sel:0}),'Import depuis Simple');
+      }
+      setMode('advanced');
+    }}>🔧 Pro</button>
   </div>
 </Navbar>
 
