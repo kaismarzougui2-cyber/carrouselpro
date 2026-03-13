@@ -659,23 +659,59 @@ const { gateExport } = usePaywall()
 
   const aSlBg=aSl.overrideBg?aSl.bg:aGlobal.bg;
 
-  // ── Export ──
+  // ── Export helpers ──
+  const pad=(n,total)=>String(n+1).padStart(String(total).length,'0');
+
+  // Génère les blobs dans l'ordre garanti (séquentiel)
+  const makeBlobs=async(list,dataFn,w,h,mime='image/jpeg',q=0.92)=>{
+    const blobs=[];
+    for(let i=0;i<list.length;i++){
+      const c=document.createElement('canvas');
+      c.width=w||1080;c.height=h||1080;
+      drawSlide(c,dataFn(list[i],i));
+      gateExport(c);
+      const b=await new Promise(res=>c.toBlob(res,mime,q));
+      blobs.push(b);
+    }
+    return blobs;
+  };
+
+  // ZIP (PC / Android) — ordre garanti par noms paddés
   const doExport=async(list,dataFn,w,h)=>{
     if(typeof window.JSZip==='undefined'){toast('Chargement…');return;}
     setExp(true);
     try{
+      const blobs=await makeBlobs(list,dataFn,w,h,'image/jpeg');
       const zip=new window.JSZip(),folder=zip.folder('carrouselpro');
-      await Promise.all(list.map((sl,i)=>new Promise(res=>{
-        const c=document.createElement('canvas');
-        c.width=w||1080;c.height=h||1080;drawSlide(c,dataFn(sl,i));
-        gateExport(c);
-        c.toBlob(b=>{folder.file(`slide-${i+1}.png`,b);res();},'image/png');
-      })));
+      blobs.forEach((b,i)=>folder.file(`slide-${pad(i,list.length)}.jpg`,b));
       const blob=await zip.generateAsync({type:'blob'});
       const a=document.createElement('a');
       a.href=URL.createObjectURL(blob);a.download=`carrousel-${Date.now()}.zip`;a.click();
       toast(`${list.length} images exportées ✓`);
     }catch(e){console.error(e);}finally{setExp(false);}
+  };
+
+  // iPhone : Web Share API → galerie directement, sinon JPEG séquentiels
+  const doExportIphone=async(list,dataFn,w,h)=>{
+    setExp(true);
+    try{
+      const blobs=await makeBlobs(list,dataFn,w,h,'image/jpeg');
+      const files=blobs.map((b,i)=>new File([b],`slide-${pad(i,list.length)}.jpg`,{type:'image/jpeg'}));
+      if(navigator.canShare&&navigator.canShare({files})){
+        await navigator.share({files,title:'Mon carrousel'});
+        toast(`${list.length} images partagées ✓`);
+        return;
+      }
+      // Fallback : téléchargement séquentiel
+      for(let i=0;i<files.length;i++){
+        const url=URL.createObjectURL(files[i]);
+        const a=document.createElement('a');
+        a.href=url;a.download=files[i].name;a.click();
+        URL.revokeObjectURL(url);
+        if(i<files.length-1)await new Promise(r=>setTimeout(r,400));
+      }
+      toast(`${list.length} images téléchargées ✓`);
+    }catch(e){if(e?.name!=='AbortError')console.error(e);}finally{setExp(false);}
   };
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
@@ -828,9 +864,16 @@ const { gateExport } = usePaywall()
                 ))}
               </div>
               <div className="bot-bar">
-                <button className="btn btn-s btn-full btn-lg" disabled={exporting} onClick={()=>doExport(slides,simData,plt.w,plt.h)}>
-                  {exporting?'⏳ Génération…':`⬇ ZIP (${slides.length} images · ${plt.label})`}
-                </button>
+                <div className="bot-row">
+                  <button className="btn btn-s btn-full btn-lg" disabled={exporting} onClick={()=>doExport(slides,simData,plt.w,plt.h)}>
+                    {exporting?'⏳…':`⬇ ZIP`}
+                  </button>
+                  <button className="btn btn-lg btn-full" disabled={exporting}
+                    style={{background:'#000',color:'#fff',border:'1px solid #444'}}
+                    onClick={()=>doExportIphone(slides,simData,plt.w,plt.h)}>
+                    {exporting?'⏳…':'📱 iPhone'}
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -880,6 +923,16 @@ const { gateExport } = usePaywall()
               <button className="adv-nb" onClick={()=>setAdv(s=>({...s,sel:Math.min(s.slides.length-1,s.sel+1)}))}>▶</button>
             </div>
             <div className="plat-badge-d">{aPlt.icon} {aPlt.label} · {aPlt.w}×{aPlt.h}</div>
+            <div style={{display:'flex',gap:8,padding:'8px 0 0'}}>
+              <button className="btn btn-s btn-full btn-sm" disabled={exporting} onClick={()=>doExport(aSlides,aData,aPlt.w,aPlt.h)}>
+                {exporting?'⏳…':'⬇ ZIP'}
+              </button>
+              <button className="btn btn-sm btn-full" disabled={exporting}
+                style={{background:'#000',color:'#fff',border:'1px solid #444'}}
+                onClick={()=>doExportIphone(aSlides,aData,aPlt.w,aPlt.h)}>
+                {exporting?'⏳…':'📱 iPhone'}
+              </button>
+            </div>
           </div>
 
           {/* ── DESKTOP RIGHT ── */}
@@ -963,10 +1016,17 @@ const { gateExport } = usePaywall()
 
           {/* MOBILE BOTTOM BAR */}
           <div className="bot-bar mob-only" style={{gridColumn:'1/-1'}}>
-            <button className="btn btn-s btn-full" disabled={exporting}
-              onClick={()=>doExport(aSlides,aData,aPlt.w,aPlt.h)}>
-              {exporting?'⏳ Export…':`⬇ ZIP (${aSlides.length} slides · ${aPlt.label})`}
-            </button>
+            <div className="bot-row">
+              <button className="btn btn-s btn-full" disabled={exporting}
+                onClick={()=>doExport(aSlides,aData,aPlt.w,aPlt.h)}>
+                {exporting?'⏳…':'⬇ ZIP'}
+              </button>
+              <button className="btn btn-full" disabled={exporting}
+                style={{background:'#000',color:'#fff',border:'1px solid #444'}}
+                onClick={()=>doExportIphone(aSlides,aData,aPlt.w,aPlt.h)}>
+                {exporting?'⏳…':'📱 iPhone'}
+              </button>
+            </div>
           </div>
 
           <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={aBgImage}/>
