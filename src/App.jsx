@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useReducer, useCallback } from 'react';
 import { auth, getProfile, saveTemplate, getUserTemplates, deleteTemplate, normalizeUser, onAuthStateChanged } from './lib/firebase'
 import { useCarouselSync } from './hooks/useCarouselSync'
-import { usePaywall, PaywallModal } from './lib/paywall'
+import { usePaywall, PaywallModal } from './lib/paywall.jsx'
 import Navbar from './components/Navbar'
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
