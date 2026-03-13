@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState, useRef, useEffect } from 'react'
-import { signOut, signInWithGoogle, signInWithEmail, signUpWithEmail } from '../lib/supabaseClient'
+import { signOut, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } from '../lib/supabaseClient'
 import { handleCheckout } from '../lib/checkout'
 
 // ── Styles ────────────────────────────────────────────────────
@@ -75,6 +75,18 @@ const css = `
     cursor:pointer; border:none; background:transparent; color:#888; transition:all .15s; }
   .dd-item:hover { background:#181818; color:#f0f0f0; }
   .dd-item.danger:hover { background:rgba(255,77,77,.1); color:#ff4d4d; }
+
+  /* Account modal extras */
+  .acc-stat { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+    border-radius:20px; font-size:11px; font-weight:700; margin-bottom:18px; }
+  .acc-stat.free { background:rgba(255,255,255,.06); border:1px solid #343434; color:#666; }
+  .acc-stat.pro  { background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3);
+    background-clip:text; }
+  .acc-pro-txt { background:linear-gradient(135deg,#f59e0b,#ef4444);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  .acc-sep { height:1px; background:#262626; margin:16px 0; }
+  .acc-section-lbl { font-size:9px; font-weight:800; letter-spacing:2px; color:#333;
+    text-transform:uppercase; margin-bottom:10px; }
 
   /* Modal auth */
   .modal-overlay { position:fixed; inset:0; z-index:500; background:rgba(0,0,0,.7);
@@ -184,12 +196,90 @@ function AuthModal({ onClose, onSuccess }) {
   )
 }
 
+// ─── ACCOUNT MODAL ────────────────────────────────────────────
+function AccountModal({ user, profile, onClose, onUpgrade }) {
+  const [resetSent, setResetSent] = useState(false)
+  const [resetErr,  setResetErr]  = useState('')
+  const isPremium = profile?.is_premium ?? false
+
+  const handleReset = async () => {
+    setResetErr('')
+    try {
+      const { error } = await resetPassword(user.email)
+      if (error) throw error
+      setResetSent(true)
+    } catch(e) {
+      setResetErr(e.message)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+          <div className="modal-title">MON COMPTE</div>
+          <button style={{background:'none',border:'none',color:'#555',cursor:'pointer',fontSize:18,padding:'2px 6px'}} onClick={onClose}>✕</button>
+        </div>
+
+        {/* Email */}
+        <div style={{fontSize:11,fontWeight:600,color:'#555',marginBottom:8}}>Email</div>
+        <div style={{fontSize:14,fontWeight:700,color:'#f0f0f0',marginBottom:16,wordBreak:'break-all'}}>{user.email}</div>
+
+        {/* Statut abonnement */}
+        <div style={{fontSize:11,fontWeight:600,color:'#555',marginBottom:8}}>Abonnement</div>
+        {isPremium ? (
+          <div className="acc-stat pro">
+            <span className="acc-pro-txt">✦ Plan Pro — actif</span>
+          </div>
+        ) : (
+          <div className="acc-stat free">Plan Gratuit · 3 carrousels max</div>
+        )}
+
+        {/* Upgrade si pas premium */}
+        {!isPremium && (
+          <button className="upg-btn" style={{width:'100%',padding:'12px',fontSize:13,marginBottom:16,borderRadius:10}}
+            onClick={() => { onUpgrade(); onClose(); }}>
+            ⚡ Passer en Pro — 9€/mois
+          </button>
+        )}
+
+        <div className="acc-sep"/>
+
+        {/* Réinitialiser mot de passe */}
+        <div className="acc-section-lbl">Sécurité</div>
+        {resetSent ? (
+          <div style={{fontSize:12,color:'#3ddc84',fontWeight:600,padding:'10px 0'}}>
+            ✓ Email de réinitialisation envoyé à {user.email}
+          </div>
+        ) : (
+          <>
+            <button className="auth-btn" style={{width:'100%',padding:'10px',marginBottom:6}}
+              onClick={handleReset}>
+              🔑 Réinitialiser le mot de passe
+            </button>
+            {resetErr && <div className="modal-err">{resetErr}</div>}
+          </>
+        )}
+
+        <div className="acc-sep"/>
+
+        {/* Déconnexion */}
+        <button className="auth-btn" style={{width:'100%',padding:'10px',color:'#ff4d4d',borderColor:'rgba(255,77,77,.25)'}}
+          onClick={() => { signOut(); onClose(); }}>
+          ↩ Se déconnecter
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── NAVBAR ───────────────────────────────────────────────────
 export default function Navbar({ user, profile, saveStatus, children }) {
-  const [showModal, setShowModal] = useState(false)
-  const [showDd, setShowDd]       = useState(false)
-  const ddRef                     = useRef(null)
-  const isPremium                 = profile?.is_premium ?? false
+  const [showModal,   setShowModal]   = useState(false)
+  const [showDd,      setShowDd]      = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
+  const ddRef                         = useRef(null)
+  const isPremium                     = profile?.is_premium ?? false
 
   // Ferme le dropdown en cliquant ailleurs
   useEffect(() => {
@@ -259,7 +349,7 @@ export default function Navbar({ user, profile, saveStatus, children }) {
                         ⚡ Passer en Pro
                       </button>
                     )}
-                    <button className="dd-item" onClick={() => { signOut(); setShowDd(false) }}>
+                    <button className="dd-item" onClick={() => { setShowAccount(true); setShowDd(false) }}>
                       👤 Mon compte
                     </button>
                     <button className="dd-item danger" onClick={() => { signOut(); setShowDd(false) }}>
@@ -274,6 +364,14 @@ export default function Navbar({ user, profile, saveStatus, children }) {
       </nav>
 
       {showModal && <AuthModal onClose={() => setShowModal(false)}/>}
+      {showAccount && user && (
+        <AccountModal
+          user={user}
+          profile={profile}
+          onClose={() => setShowAccount(false)}
+          onUpgrade={onUpgrade}
+        />
+      )}
     </>
   )
 }

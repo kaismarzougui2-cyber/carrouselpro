@@ -100,3 +100,63 @@ export const countUserCarousels = async (userId) => {
   if (error) throw error
   return count ?? 0
 }
+
+// ─── TEMPLATES ────────────────────────────────────────────────
+// SQL à exécuter dans Supabase Dashboard > SQL Editor :
+//
+//   create table templates (
+//     id uuid default uuid_generate_v4() primary key,
+//     user_id uuid references auth.users not null,
+//     name text not null,
+//     data jsonb not null default '{}',
+//     created_at timestamptz default now()
+//   );
+//   alter table templates enable row level security;
+//   create policy "Users manage own templates"
+//     on templates for all using (auth.uid() = user_id);
+
+export const saveTemplate = async (userId, template) => {
+  const { id, name, data } = template
+  if (id) {
+    const { data: row, error } = await supabase
+      .from('templates')
+      .update({ name, data })
+      .eq('id', id).eq('user_id', userId)
+      .select().single()
+    if (error) throw error
+    return row
+  } else {
+    const { data: row, error } = await supabase
+      .from('templates')
+      .insert({ user_id: userId, name, data })
+      .select().single()
+    if (error) throw error
+    return row
+  }
+}
+
+export const getUserTemplates = async (userId) => {
+  const { data, error } = await supabase
+    .from('templates')
+    .select('id, name, data, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  if (error) throw error
+  return data
+}
+
+export const deleteTemplate = async (userId, templateId) => {
+  const { error } = await supabase
+    .from('templates')
+    .delete()
+    .eq('id', templateId).eq('user_id', userId)
+  if (error) throw error
+}
+
+// ─── AUTH UTILS ───────────────────────────────────────────────
+
+export const resetPassword = (email) =>
+  supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/`,
+  })
